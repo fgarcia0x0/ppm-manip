@@ -6,7 +6,7 @@
 #include <assert.h>
 #include <math.h>
 
-#define RELEASE(ptr) do { if(ptr) free(ptr); } while (0)
+#define RELEASE(ptr) do { if (ptr) free(ptr); } while (0)
 
 typedef struct
 {
@@ -115,23 +115,12 @@ RgbColor ToGrayScaleP3(RgbColor PixelColor);
 
 int main()
 {
-	PpmImage* pImage = LOAD_PPM_IMAGE("sample.ppm");
+	PpmImage* pImage = LOAD_PPM_IMAGE("../samples/sample.ppm");
 	assert(pImage);
 
-	PpmImage* pImage2 = LOAD_PPM_IMAGE("sample2.ppm");
-	assert(pImage2);
-
-	PpmImage* pImage3 = LOAD_PPM_IMAGE("result.ppm");
-	assert(pImage3);
-
 	WRITE_PPM_GRAY_FILE("resultGray.ppm", pImage);
-	WRITE_PPM_GRAY_FILE("result2Gray.ppm", pImage2);
-	WRITE_PPM_GRAY_P3_FILE("result.ppm", pImage3);
 
 	RELEASE_PPM(pImage);
-	RELEASE_PPM(pImage2);
-	RELEASE_PPM(pImage3);
-	
 	return 0;
 }
 
@@ -144,12 +133,15 @@ int fpeek(FILE* restrict hStream)
 
 void ClearComment(FILE* restrict hFile)
 {
+	if (!hFile)
+		return;
+
 	enum { MAX_BUFFER_SIZE = 1024 };
 
-    char c = EOF;
+    int c = EOF;
 
     while (c = fpeek(hFile), c == '\n' || c == '\r')
-        fgetc(hFile);
+        (void) fgetc(hFile);
 
     if (c == '#') 
     {
@@ -171,7 +163,7 @@ PpmImage* LoadImage(const char* filename)
 		return NULL;
 
 	FILE* hFile = fopen(filename, "rb");
-	if (!hFile || ferror(hFile))
+	if (!hFile)
 		return NULL;
 
 	ClearComment(hFile);
@@ -179,8 +171,7 @@ PpmImage* LoadImage(const char* filename)
 
     // Get Header
     char szImageSign[3] = {0};
-    szImageSign[0] = fgetc(hFile);
-    szImageSign[1] = fgetc(hFile);
+    fgets(szImageSign, sizeof szImageSign, hFile);
 
     mode = szImageSign[1] - '0';
 
@@ -209,7 +200,11 @@ PpmImage* LoadImage(const char* filename)
 
     // Allocate image structure into memory
     PpmImage* pImage = (PpmImage*) malloc(sizeof(PpmImage));
-    assert(pImage);
+    if (!pImage)
+    {
+    	fprintf(stderr, "[-] memory exausted");
+    	exit(EXIT_FAILURE);
+    }
 
     // setup image information
     pImage->Width = imgWidth;
@@ -224,7 +219,7 @@ PpmImage* LoadImage(const char* filename)
 
     RgbColor* pColorBuffer = ColorBuffer;
 
-    unsigned r = 0, g = 0, b = 0;
+    uint8_t r = 0, g = 0, b = 0;
 
     if (mode == 3)
     {
@@ -232,7 +227,7 @@ PpmImage* LoadImage(const char* filename)
     	{
     		for (size_t x = 0; x < imgWidth; ++x)
 	    	{
-	    		if (fscanf(hFile, "%u%u%u\n", &r, &g, &b) == 3)
+	    		if (fscanf(hFile, "%hhu%hhu%hhu\n", &r, &g, &b) == 3U)
 	   			{
 	   				pColorBuffer[y * imgWidth + x] = (RgbColor){r, g, b};
 	   			}
@@ -241,12 +236,13 @@ PpmImage* LoadImage(const char* filename)
     }
     else
     {
-    	size_t nBytesRead = fread(pColorBuffer, imgSize, 1, hFile);
-    	assert(nBytesRead == 1);
+    	size_t nBytesRead = fread(pColorBuffer, imgSize, sizeof(uint8_t), hFile);
+    	assert(nBytesRead == sizeof(uint8_t));
+    	(void)nBytesRead;
     }
     
     pImage->Pixels = ColorBuffer;
-    pImage->Mode = (mode == 3) ? PPM_MODE_P3 : PPM_MODE_P6;
+    pImage->Mode = (mode == 3U) ? PPM_MODE_P3 : PPM_MODE_P6;
 
 	fclose(hFile);
 	return pImage;
@@ -255,9 +251,14 @@ PpmImage* LoadImage(const char* filename)
 void WriteToPpm(const char* filename, PpmImage* pImage, PPM_MODE mode, 
 				UnaryPredicate pfnTransform)
 {
+	if (!filename || !*filename || !pImage || !pfnTransform)
+		return;
+
 	const char* szOpenMode = (mode == PPM_MODE_P3) ? "w" : "wb";
 	FILE* hFile = fopen(filename, szOpenMode);
-	assert(hFile);
+	
+	if (!hFile)
+		return;
 
 	const char* szSignature = NULL;
 	switch (mode)
@@ -289,27 +290,27 @@ void WriteToPpm(const char* filename, PpmImage* pImage, PPM_MODE mode,
 			}
 			else 
 			{
-				size_t sz = fwrite(&Pixel, sizeof(RgbColor), 1, hFile);
-				assert(sz == 1);
+				size_t sz = fwrite(&Pixel, sizeof(RgbColor), sizeof(uint8_t), hFile);
+				assert(sz == sizeof(uint8_t));
+				(void)sz;
 			}
 		}
 	}
 
-	fflush(hFile);
 	fclose(hFile);
 }
 
 RgbColor ToGrayScale(RgbColor PixelColor)
 {
-	uint8_t r = PixelColor.R * 0.299;
-	uint8_t g = PixelColor.G * 0.587;
-	uint8_t b = PixelColor.B * 0.144;
+	uint8_t r = (uint8_t)(PixelColor.R * 0.299);
+	uint8_t g = (uint8_t)(PixelColor.G * 0.587);
+	uint8_t b = (uint8_t)(PixelColor.B * 0.144);
     uint8_t gray = (uint8_t) floor(r + g + b + 0.5);
     return (RgbColor){gray, gray, gray};
 }
 
 RgbColor ToGrayScaleP3(RgbColor PixelColor)
 {
-    uint32_t gray = (PixelColor.R + PixelColor.G + PixelColor.B) / 3;
+    uint8_t gray = (uint8_t)((PixelColor.R + PixelColor.G + PixelColor.B) / 3U);
     return (RgbColor){gray, gray, gray};
 }
