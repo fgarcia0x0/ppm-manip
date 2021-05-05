@@ -63,7 +63,7 @@ endif()
 
 
 # add the executable
-add_executable(ppm_manip ppm_manip.c)
+add_executable(ppm_manip src/*.c)
 
 # set c version
 set_target_properties(ppm_manip PROPERTIES
